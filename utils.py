@@ -1,10 +1,14 @@
-import itertools, imageio, torch, random
-import matplotlib.pyplot as plt
-import numpy as np
+import glob
+import os.path
+import random
+
+import torch
 import torch.nn as nn
 from torchvision import datasets
-from scipy.misc import imresize
-from torch.autograd import Variable
+from torch.utils.data import Dataset
+from torchvision.transforms import Compose
+from PIL import Image
+
 
 def data_load(path, subfolder, transform, batch_size, shuffle=False, drop_last=True):
     dset = datasets.ImageFolder(path, transform)
@@ -20,12 +24,14 @@ def data_load(path, subfolder, transform, batch_size, shuffle=False, drop_last=T
 
     return torch.utils.data.DataLoader(dset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last)
 
+
 def print_network(net):
     num_params = 0
     for param in net.parameters():
         num_params += param.numel()
     print(net)
     print('Total number of parameters: %d' % num_params)
+
 
 def initialize_weights(net):
     for m in net.modules():
@@ -41,3 +47,26 @@ def initialize_weights(net):
         elif isinstance(m, nn.BatchNorm2d):
             m.weight.data.fill_(1)
             m.bias.data.zero_()
+
+
+class ImageDataset(Dataset):
+    def __init__(self, root, transforms_=None, unaligned=False, mode="train"):
+        self.transform = Compose(transforms_)
+        self.unaligned = unaligned
+
+        self.files_A = sorted(glob.glob(os.path.join(root, "%s/anime" % mode) + "/*.*"))
+        self.files_B = sorted(glob.glob(os.path.join(root, "%s/pair" % mode) + "/*.*"))
+
+    def __getitem__(self, index):
+        item_A = self.transform(Image.open(self.files_A[index % len(self.files_A)]))
+
+        if self.unaligned:
+            item_B = self.transform(Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)]))
+        else:
+            item_B = self.transform(Image.open(self.files_B[index % len(self.files_B)]))
+
+        return {"anime": item_A, "pair": item_B}
+
+    def __len__(self):
+        return max(len(self.files_A), len(self.files_B))
+

@@ -2,6 +2,7 @@ import torch, utils
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class resnet_block(nn.Module):
     def __init__(self, channel, kernel, stride, padding):
         super(resnet_block, self).__init__()
@@ -20,8 +21,8 @@ class resnet_block(nn.Module):
         x = F.relu(self.conv1_norm(self.conv1(input)), True)
         x = self.conv2_norm(self.conv2(x))
 
-        return input + x #Elementwise Sum
- 
+        return input + x  # Elementwise Sum
+
 
 class generator(nn.Module):
     # initializers
@@ -32,15 +33,15 @@ class generator(nn.Module):
         self.nf = nf
         self.nb = nb
         self.down_convs = nn.Sequential(
-            nn.Conv2d(in_nc, nf, 7, 1, 3), #k7n64s1
+            nn.Conv2d(in_nc, nf, 7, 1, 3),  # k7n64s1
             nn.InstanceNorm2d(nf),
             nn.ReLU(True),
-            nn.Conv2d(nf, nf * 2, 3, 2, 1), #k3n128s2
-            nn.Conv2d(nf * 2, nf * 2, 3, 1, 1), #k3n128s1
+            nn.Conv2d(nf, nf * 2, 3, 2, 1),  # k3n128s2
+            nn.Conv2d(nf * 2, nf * 2, 3, 1, 1),  # k3n128s1
             nn.InstanceNorm2d(nf * 2),
             nn.ReLU(True),
-            nn.Conv2d(nf * 2, nf * 4, 3, 2, 1), #k3n256s1
-            nn.Conv2d(nf * 4, nf * 4, 3, 1, 1), #k3n256s1
+            nn.Conv2d(nf * 2, nf * 4, 3, 2, 1),  # k3n256s1
+            nn.Conv2d(nf * 4, nf * 4, 3, 1, 1),  # k3n256s1
             nn.InstanceNorm2d(nf * 4),
             nn.ReLU(True),
         )
@@ -52,15 +53,15 @@ class generator(nn.Module):
         self.resnet_blocks = nn.Sequential(*self.resnet_blocks)
 
         self.up_convs = nn.Sequential(
-            nn.ConvTranspose2d(nf * 4, nf * 2, 3, 2, 1, 1), #k3n128s1/2
-            nn.Conv2d(nf * 2, nf * 2, 3, 1, 1), #k3n128s1
+            nn.ConvTranspose2d(nf * 4, nf * 2, 3, 2, 1, 1),  # k3n128s1/2
+            nn.Conv2d(nf * 2, nf * 2, 3, 1, 1),  # k3n128s1
             nn.InstanceNorm2d(nf * 2),
             nn.ReLU(True),
-            nn.ConvTranspose2d(nf * 2, nf, 3, 2, 1, 1), #k3n64s1/2
-            nn.Conv2d(nf, nf, 3, 1, 1), #k3n64s1
+            nn.ConvTranspose2d(nf * 2, nf, 3, 2, 1, 1),  # k3n64s1/2
+            nn.Conv2d(nf, nf, 3, 1, 1),  # k3n64s1
             nn.InstanceNorm2d(nf),
             nn.ReLU(True),
-            nn.Conv2d(nf, out_nc, 7, 1, 3), #k7n3s1
+            nn.Conv2d(nf, out_nc, 7, 1, 3),  # k7n3s1
             nn.Tanh(),
         )
 
@@ -115,7 +116,8 @@ class discriminator(nn.Module):
 class VGG19(nn.Module):
     def __init__(self, init_weights=None, feature_mode=False, batch_norm=False, num_classes=1000):
         super(VGG19, self).__init__()
-        self.cfg = [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M']
+        self.cfg = [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512,
+                    'M']
         self.init_weights = init_weights
         self.feature_mode = feature_mode
         self.batch_norm = batch_norm
@@ -151,7 +153,7 @@ class VGG19(nn.Module):
     def forward(self, x):
         if self.feature_mode:
             module_list = list(self.features.modules())
-            for l in module_list[1:27]:                 # conv4_4
+            for l in module_list[1:27]:  # conv4_4
                 x = l(x)
         if not self.feature_mode:
             x = x.view(x.size(0), -1)

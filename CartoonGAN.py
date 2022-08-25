@@ -3,14 +3,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
 from torchvision import transforms
 from edge_promoting import edge_promoting
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--name', required=False, default='project_name',  help='')
-parser.add_argument('--src_data', required=False, default='src_data_path',  help='sec data path')
-parser.add_argument('--tgt_data', required=False, default='tgt_data_path',  help='tgt data path')
-parser.add_argument('--vgg_model', required=False, default='pre_trained_VGG19_model_path/vgg19.pth', help='pre-trained VGG19 model path')
+parser.add_argument('--name', required=False, default='project_name', help='')
+parser.add_argument('--dataset_folder', required=False, default='paired_dataset', help='')
+parser.add_argument('--src_data', required=False, default='src_data_path', help='sec data path')
+parser.add_argument('--tgt_data', required=False, default='tgt_data_path', help='tgt data path')
+parser.add_argument('--vgg_model', required=False, default='pre_trained_VGG19_model_path/vgg19.pth',
+                    help='pre-trained VGG19 model path')
 parser.add_argument('--in_ngc', type=int, default=3, help='input channel for generator')
 parser.add_argument('--out_ngc', type=int, default=3, help='output channel for generator')
 parser.add_argument('--in_ndc', type=int, default=3, help='input channel for discriminator')
@@ -47,25 +50,33 @@ if not os.path.isdir(os.path.join(args.name + '_results', 'Transfer')):
     os.makedirs(os.path.join(args.name + '_results', 'Transfer'))
 
 # edge-promoting
-if not os.path.isdir(os.path.join('data', args.tgt_data, 'pair')):
-    print('edge-promoting start!!')
-    edge_promoting(os.path.join('data', args.tgt_data, 'train'), os.path.join('data', args.tgt_data, 'pair'))
-else:
-    print('edge-promoting already done')
+# if not os.path.isdir(os.path.join('data', args.tgt_data, 'pair')):
+#     print('edge-promoting start!!')
+#     edge_promoting(os.path.join('data', args.tgt_data, 'train'), os.path.join('data', args.tgt_data, 'pair'))
+# else:
+#     print('edge-promoting already done')
 
 # data_loader
 src_transform = transforms.Compose([
-        transforms.Resize((args.input_size, args.input_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+    transforms.Resize((args.input_size, args.input_size)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
 ])
 tgt_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
 ])
-train_loader_src = utils.data_load(os.path.join('data', args.src_data), 'train', src_transform, args.batch_size, shuffle=True, drop_last=True)
-train_loader_tgt = utils.data_load(os.path.join('data', args.tgt_data), 'pair', tgt_transform, args.batch_size, shuffle=True, drop_last=True)
-test_loader_src = utils.data_load(os.path.join('data', args.src_data), 'test', src_transform, 1, shuffle=True, drop_last=True)
+transforms_ = [
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+]
+train_loader_src = utils.data_load(os.path.join(os.path.join('data', args.dataset_folder), "train"), args.src_data, src_transform, args.batch_size,
+                                   shuffle=True, drop_last=True)
+train_loader_tgt = utils.data_load(os.path.join(os.path.join('data', args.dataset_folder), "train"), args.tgt_data, tgt_transform, args.batch_size,
+                                   shuffle=True, drop_last=True)
+train_loader_all = DataLoader(utils.ImageDataset(os.path.join('data', args.dataset_folder), transforms_, True, mode="train"), batch_size=args.batch_size)
+test_loader_src = utils.data_load(os.path.join('data', args.dataset_folder), "test", src_transform, 1, shuffle=True,
+                                  drop_last=True)
 
 # network
 G = networks.generator(args.in_ngc, args.out_ngc, args.ngf, args.nb)
@@ -102,8 +113,10 @@ L1_loss = nn.L1Loss().to(device)
 # Adam optimizer
 G_optimizer = optim.Adam(G.parameters(), lr=args.lrG, betas=(args.beta1, args.beta2))
 D_optimizer = optim.Adam(D.parameters(), lr=args.lrD, betas=(args.beta1, args.beta2))
-G_scheduler = optim.lr_scheduler.MultiStepLR(optimizer=G_optimizer, milestones=[args.train_epoch // 2, args.train_epoch // 4 * 3], gamma=0.1)
-D_scheduler = optim.lr_scheduler.MultiStepLR(optimizer=D_optimizer, milestones=[args.train_epoch // 2, args.train_epoch // 4 * 3], gamma=0.1)
+G_scheduler = optim.lr_scheduler.MultiStepLR(optimizer=G_optimizer,
+                                             milestones=[args.train_epoch // 2, args.train_epoch // 4 * 3], gamma=0.1)
+D_scheduler = optim.lr_scheduler.MultiStepLR(optimizer=D_optimizer,
+                                             milestones=[args.train_epoch // 2, args.train_epoch // 4 * 3], gamma=0.1)
 
 pre_train_hist = {}
 pre_train_hist['Recon_loss'] = []
@@ -136,11 +149,12 @@ if args.latest_generator_model == '':
 
         per_epoch_time = time.time() - epoch_start_time
         pre_train_hist['per_epoch_time'].append(per_epoch_time)
-        print('[%d/%d] - time: %.2f, Recon loss: %.3f' % ((epoch + 1), args.pre_train_epoch, per_epoch_time, torch.mean(torch.FloatTensor(Recon_losses))))
+        print('[%d/%d] - time: %.2f, Recon loss: %.3f' % (
+            (epoch + 1), args.pre_train_epoch, per_epoch_time, torch.mean(torch.FloatTensor(Recon_losses))))
 
     total_time = time.time() - start_time
     pre_train_hist['total_time'].append(total_time)
-    with open(os.path.join(args.name + '_results',  'pre_train_hist.pkl'), 'wb') as f:
+    with open(os.path.join(args.name + '_results', 'pre_train_hist.txt'), 'wb') as f:
         pickle.dump(pre_train_hist, f)
 
     with torch.no_grad():
@@ -149,7 +163,8 @@ if args.latest_generator_model == '':
             x = x.to(device)
             G_recon = G(x)
             result = torch.cat((x[0], G_recon[0]), 2)
-            path = os.path.join(args.name + '_results', 'Reconstruction', args.name + '_train_recon_' + str(n + 1) + '.png')
+            path = os.path.join(args.name + '_results', 'Reconstruction',
+                                args.name + '_train_recon_' + str(n + 1) + '.png')
             plt.imsave(path, (result.cpu().numpy().transpose(1, 2, 0) + 1) / 2)
             if n == 4:
                 break
@@ -158,20 +173,15 @@ if args.latest_generator_model == '':
             x = x.to(device)
             G_recon = G(x)
             result = torch.cat((x[0], G_recon[0]), 2)
-            path = os.path.join(args.name + '_results', 'Reconstruction', args.name + '_test_recon_' + str(n + 1) + '.png')
+            path = os.path.join(args.name + '_results', 'Reconstruction',
+                                args.name + '_test_recon_' + str(n + 1) + '.png')
             plt.imsave(path, (result.cpu().numpy().transpose(1, 2, 0) + 1) / 2)
             if n == 4:
                 break
 else:
     print('Load the latest generator model, no need to pre-train')
 
-
-train_hist = {}
-train_hist['Disc_loss'] = []
-train_hist['Gen_loss'] = []
-train_hist['Con_loss'] = []
-train_hist['per_epoch_time'] = []
-train_hist['total_time'] = []
+train_hist = {'Disc_loss': [], 'Gen_loss': [], 'Con_loss': [], 'per_epoch_time': [], 'total_time': []}
 print('training start!')
 start_time = time.time()
 real = torch.ones(args.batch_size, 1, args.input_size // 4, args.input_size // 4).to(device)
@@ -179,12 +189,15 @@ fake = torch.zeros(args.batch_size, 1, args.input_size // 4, args.input_size // 
 for epoch in range(args.train_epoch):
     epoch_start_time = time.time()
     G.train()
-    G_scheduler.step()
-    D_scheduler.step()
     Disc_losses = []
     Gen_losses = []
     Con_losses = []
-    for (x, _), (y, _) in zip(train_loader_src, train_loader_tgt):
+    # for (x, _), (y, _) in zip(train_loader_src, train_loader_tgt):
+    for i, batch in enumerate(train_loader_all):
+        print(i)
+        x = batch["anime"]
+        y = batch["pair"]
+
         e = y[:, :, :, args.input_size:]
         y = y[:, :, :, :args.input_size]
         x, y, e = x.to(device), y.to(device), e.to(device)
@@ -229,12 +242,14 @@ for epoch in range(args.train_epoch):
         Gen_loss.backward()
         G_optimizer.step()
 
-
+    G_scheduler.step()
+    D_scheduler.step()
     per_epoch_time = time.time() - epoch_start_time
     train_hist['per_epoch_time'].append(per_epoch_time)
     print(
-    '[%d/%d] - time: %.2f, Disc loss: %.3f, Gen loss: %.3f, Con loss: %.3f' % ((epoch + 1), args.train_epoch, per_epoch_time, torch.mean(torch.FloatTensor(Disc_losses)),
-        torch.mean(torch.FloatTensor(Gen_losses)), torch.mean(torch.FloatTensor(Con_losses))))
+        '[%d/%d] - time: %.2f, Disc loss: %.3f, Gen loss: %.3f, Con loss: %.3f' % (
+            (epoch + 1), args.train_epoch, per_epoch_time, torch.mean(torch.FloatTensor(Disc_losses)),
+            torch.mean(torch.FloatTensor(Gen_losses)), torch.mean(torch.FloatTensor(Con_losses))))
 
     if epoch % 2 == 1 or epoch == args.train_epoch - 1:
         with torch.no_grad():
@@ -243,7 +258,8 @@ for epoch in range(args.train_epoch):
                 x = x.to(device)
                 G_recon = G(x)
                 result = torch.cat((x[0], G_recon[0]), 2)
-                path = os.path.join(args.name + '_results', 'Transfer', str(epoch+1) + '_epoch_' + args.name + '_train_' + str(n + 1) + '.png')
+                path = os.path.join(args.name + '_results', 'Transfer',
+                                    str(epoch + 1) + '_epoch_' + args.name + '_train_' + str(n + 1) + '.png')
                 plt.imsave(path, (result.cpu().numpy().transpose(1, 2, 0) + 1) / 2)
                 if n == 4:
                     break
@@ -252,21 +268,25 @@ for epoch in range(args.train_epoch):
                 x = x.to(device)
                 G_recon = G(x)
                 result = torch.cat((x[0], G_recon[0]), 2)
-                path = os.path.join(args.name + '_results', 'Transfer', str(epoch+1) + '_epoch_' + args.name + '_test_' + str(n + 1) + '.png')
+                path = os.path.join(args.name + '_results', 'Transfer',
+                                    str(epoch + 1) + '_epoch_' + args.name + '_test_' + str(n + 1) + '.png')
                 plt.imsave(path, (result.cpu().numpy().transpose(1, 2, 0) + 1) / 2)
                 if n == 4:
                     break
 
-            torch.save(G.state_dict(), os.path.join(args.name + '_results', 'generator_latest.pkl'))
-            torch.save(D.state_dict(), os.path.join(args.name + '_results', 'discriminator_latest.pkl'))
+            torch.save(G.state_dict(), os.path.join(args.name + '_results', 'generator_latest.pth'))
+            torch.save(D.state_dict(), os.path.join(args.name + '_results', 'discriminator_latest.pth'))
 
 total_time = time.time() - start_time
 train_hist['total_time'].append(total_time)
 
-print("Avg one epoch time: %.2f, total %d epochs time: %.2f" % (torch.mean(torch.FloatTensor(train_hist['per_epoch_time'])), args.train_epoch, total_time))
+
+
+print("Avg one epoch time: %.2f, total %d epochs time: %.2f" % (
+    torch.mean(torch.FloatTensor(train_hist['per_epoch_time'])), args.train_epoch, total_time))
 print("Training finish!... save training results")
 
-torch.save(G.state_dict(), os.path.join(args.name + '_results',  'generator_param.pkl'))
-torch.save(D.state_dict(), os.path.join(args.name + '_results',  'discriminator_param.pkl'))
-with open(os.path.join(args.name + '_results',  'train_hist.pkl'), 'wb') as f:
+torch.save(G.state_dict(), os.path.join(args.name + '_results', 'generator_param.pth'))
+torch.save(D.state_dict(), os.path.join(args.name + '_results', 'discriminator_param.pth'))
+with open(os.path.join(args.name + '_results', 'train_hist.txt'), 'wb') as f:
     pickle.dump(train_hist, f)
